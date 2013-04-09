@@ -169,7 +169,6 @@ list of strings, giving the binary name and arguments.")
     (when files (push `(files . ,(apply #'vector files)) doc))
     (push `(file . ,file-name) (cdr (assq 'query doc)))
     (push `(end . ,(1- pos)) (cdr (assq 'query doc)))
-;    (message ">> request go")
     (tern-run-request
      (lambda (err data)
        (cond ((not err)
@@ -299,11 +298,38 @@ list of strings, giving the binary name and arguments.")
           (push (propertize ret 'face 'font-lock-type-face) parts)))
       (let (message-log-max
             (str (apply #'concat (nreverse parts))))
-        (cond
-         ((featurep 'popup)
-          (popup-tip str)) ;; 表示位置調整、faceから現在地把握
-         (t
-          (message str)))))))
+        (when (featurep 'popup)
+          (tern-show-argument-hints-popup))
+        (message str)))))
+
+(defun tern-show-argument-hints-popup ()
+  (let ((paren (car tern-last-argument-hints))
+        (type (cdr tern-last-argument-hints)))
+    (let ((parts ()) (poss ())
+          (current-arg (tern-find-current-arg paren)))
+      (destructuring-bind (name args ret) type
+        (push "(" parts) (push " " poss)
+        (loop for arg in args for i from 0 do
+              (unless (zerop i) 
+                (push ", " parts) (push "  " poss))
+              (let ((posc (if (eq i current-arg) ?^ ? ))
+                    (argname (car arg)) (argtype (cdr arg)))
+                (when argname
+                  (push (make-string (string-width argname) posc) poss)
+                  (push argname parts)
+                  (push ": " parts)
+                  (push (make-string (string-width ": ") posc) poss))
+                (push argtype parts)
+                (push (make-string (string-width argtype) posc) poss)))
+        (push ")" parts) (push " " poss)
+        (when ret
+          (push " -> " parts)
+          (push ret parts))
+        (popup-tip (concat 
+                    (apply #'concat (nreverse parts)) "\n"
+                    (apply #'concat (nreverse poss))
+                    )
+                   :point paren)))))
 
 ;; Refactoring ops
 
