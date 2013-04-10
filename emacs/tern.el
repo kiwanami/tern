@@ -12,8 +12,10 @@
 
 (eval-when-compile (require 'cl))
 (require 'json)
+
 (require 'request-deferred)
 (require 'concurrent)
+(require 'widget-mvc)
 
 (defvar tern-server-map nil
   "map (project-dir -> (port process)). This variable is initialized at `tern-mode-enable'.")
@@ -48,6 +50,11 @@
       (cc:dataflow-get tern-server-map tp-dir)
       (lambda (pair) (car pair)))))
 
+(defun tern-restart-server (project-dir)
+  (let ((pair (cc:dataflow-get-sync tern-server-map project-dir)))
+    (when (and pair (process-live-p (cadr pair)))
+      (interrupt-process (cadr pair)))))
+
 (defun tern-init-server-map ()
   (unless tern-server-map
     (setq tern-server-map (cc:dataflow-environment))
@@ -55,14 +62,19 @@
      tern-server-map 'get-first 
      (lambda (arg)
        (destructuring-bind (sym (dir)) arg
-         (message ">> start [%s] " dir)
+         ;(message ">> start [%s] " dir)
          (tern-start-server dir))))))
 
+(defvar tern-home
+  (let ((script-file (or load-file-name
+                         (and (boundp 'bytecomp-filename) bytecomp-filename)
+                         buffer-file-name)))
+    (expand-file-name ".." (file-name-directory script-file)))
+  "Return tern install directory."
+  )
+
 (defvar tern-command
-  (let* ((script-file (or load-file-name
-                          (and (boundp 'bytecomp-filename) bytecomp-filename)
-                          buffer-file-name))
-         (bin-file (expand-file-name "../bin/tern" (file-name-directory script-file))))
+  (let ((bin-file (expand-file-name "bin/tern" tern-home)))
     (list (if (file-exists-p bin-file) bin-file "tern")))
   "The command to be run to start the Tern server. Should be a
 list of strings, giving the binary name and arguments.")
@@ -75,14 +87,14 @@ list of strings, giving the binary name and arguments.")
     (set-process-sentinel 
      proc (lambda (_proc _event)
             (delete-process proc) 
-            (message "tern-server-exit : [%s]" dir)
+            ;(message "tern-server-exit : [%s]" dir)
             (cc:dataflow-clear tern-server-map dir)))
     (set-process-filter
      proc (lambda (proc output)
             (when (string-match "Listening on port \\([0-9][0-9]*\\)" output)
               (setf tern-known-port (string-to-number (match-string 1 output)))
               (set-process-filter proc nil)
-              (message ">> set [%s] [%s]" dir tern-known-port)
+              ;(message ">> set [%s] [%s]" dir tern-known-port)
               (cc:dataflow-set tern-server-map dir (list tern-known-port proc)))))))
 
 (defvar tern-command-generation 0)
@@ -298,9 +310,9 @@ list of strings, giving the binary name and arguments.")
           (push (propertize ret 'face 'font-lock-type-face) parts)))
       (let (message-log-max
             (str (apply #'concat (nreverse parts))))
+        (message str)
         (when (featurep 'popup)
-          (tern-show-argument-hints-popup))
-        (message str)))))
+          (tern-show-argument-hints-popup))))))
 
 (defun tern-show-argument-hints-popup ()
   (let ((paren (car tern-last-argument-hints))
@@ -519,5 +531,150 @@ list of strings, giving the binary name and arguments.")
       (define-key tern-mode-keymap "." 'tern-dot-complete)
     (define-key tern-mode-keymap "." nil))
   (add-to-list 'ac-sources 'ac-source-tern-completion))
+
+
+;;; Make project file
+
+(eval-when-compile 
+  (defmacro tern-prjfix-collect-gen (target)
+    `(loop with plugins-dir = (expand-file-name ,target tern-home)
+           for fn in (directory-files plugins-dir t "^[^\\.]")
+           collect (list (gensym ,target) 
+                         (file-name-sans-extension (file-name-nondirectory fn)) 
+                         fn))))
+
+(defun tern-prjfix-collect-libs ()
+  (tern-prjfix-collect-gen "defs"))
+
+(defun tern-prjfix-collect-plugins ()
+  (tern-prjfix-collect-gen "plugin"))
+
+(defun tern-prjfix-find-by-name (name item-list)
+  "ITEM-LIST -> (list (sym pname content) ... )"
+  (unless (stringp name)
+    (setq name (format "%s" name)))
+  (loop for item in item-list
+        for pname = (cadr item)
+        if (equal name pname) return item))
+
+(defun tern-prjfix-collect-jsfiles (dir &optional base-dir)
+  (unless base-dir
+    (setq base-dir dir))
+  (loop 
+   with ret = nil
+   for fn in (directory-files dir nil "^[^\\.]")
+   for path = (expand-file-name fn dir)
+   if (file-directory-p path)
+   do (setq ret (append (tern-prjfix-collect-jsfiles path base-dir) ret))
+   else
+   do (when (equal "js" (file-name-extension fn))
+        (let ((name (file-relative-name path base-dir)))
+          (setq ret (cons (list name name) ret))))
+   finally return ret))
+
+(defun tern-prjfix-make ()
+  (interactive)
+  (let* ((pdir (tern-project-dir))
+         (pfile (expand-file-name ".tern-project" pdir))
+         project-data)
+    (when (file-exists-p pfile)
+      (setq project-data 
+            (let ((json-array-type 'list))
+              (ignore-errors
+                (json-read-file pfile)))))
+    (tern-prjfix-dialog-show pdir project-data)))
+
+(defvar tern-prjfix-dialog-before-win-num 0  "[internal] ")
+
+(defun tern-prjfix-dialog-show (pdir project-data)
+  (let* ((libs (tern-prjfix-collect-libs))
+         (plugins (tern-prjfix-collect-plugins))
+         (jsfiles (tern-prjfix-collect-jsfiles pdir))
+         (src `(
+               ,(propertize "JavaScript Project Setting" 'face 'info-title-1) BR
+               "Project Directory : " ,pdir BR BR
+               ,(propertize "Project Environments" 'face 'info-title-2) BR
+               ,@(loop for (sym name path) in libs
+                       append (list `(input :name ,sym :type checkbox)
+                                     "  " name 'BR))
+               BR ,(propertize "Tern Plugins" 'face 'info-title-2) BR
+               ,@(loop for (sym name path) in plugins
+                       append (list `(input :name ,sym :type checkbox)
+                                    "  " name 'BR))
+               BR ,(propertize "Load Eagerly" 'face 'info-title-2) BR
+               ,@(loop for (sym name path) in jsfiles
+                       append (list `(input :name ,sym :type checkbox)
+                                    "  " name 'BR))
+               BR BR
+               "  " (button :title "OK" :action on-submit :validation t)
+               "  " (button :title "Cancel" :action on-cancel)))
+        (model 
+         (let ((data-plugins (cdr (assoc 'plugins project-data)))
+               (data-libs (cdr (assoc 'libs project-data)))
+               (data-jsfiles (cdr (assoc 'loadEagerly project-data))))
+           (append
+            (loop for (sym pname content) in plugins
+                  for (name . opts) = (assoc (intern pname) data-plugins)
+                  collect (cons sym (and name t)))
+            (loop for (sym pname content) in libs
+                  collect (cons sym (and (member pname data-libs) t)))
+            (loop for (path name) in jsfiles
+                  collect (cons path (and (member path data-jsfiles) t))))))
+        (validations nil)
+        (action-mapping 
+         '((on-submit . tern-prjfix-submit-action)
+           (on-cancel . tern-prjfix-dialog-kill-buffer)))
+        (attributes (list 
+                     (cons 'project-dir pdir) (cons 'libs libs)
+                     (cons 'jsfiles jsfiles) (cons 'plugins plugins))))
+    (setq tern-prjfix-dialog-before-win-num (length (window-list)))
+    (pop-to-buffer
+     (wmvc:build-buffer 
+      :buffer (wmvc:get-new-buffer)
+      :tmpl src :model model :actions action-mapping
+      :validations validations :attributes attributes))))
+
+(defun tern-prjfix-submit-action (model)
+  (let* ((ctx wmvc:context)
+         (pdir (wmvc:context-attr-get ctx 'project-dir))
+         (pfile (expand-file-name ".tern-project" pdir))
+         (plugins (wmvc:context-attr-get ctx 'plugins))
+         (libs (wmvc:context-attr-get ctx 'libs))
+         (jsfiles (wmvc:context-attr-get ctx 'jsfiles))
+         (coding-system-for-write 'utf-8)
+         after-save-hook before-save-hook
+         (json (json-encode 
+                (list
+                 (cons 'plugins
+                       (loop for (sym pname content) in plugins
+                             for (msym . val) = (assoc sym model)
+                             if val collect (cons pname (list ))))
+                 (cons 'libs
+                       (loop for (sym pname content) in libs
+                             for (msym . val) = (assoc sym model)
+                             if val collect pname))
+                 (cons 'loadEagerly
+                       (loop for (path name) in jsfiles
+                             for (path . val) = (assoc path model)
+                             if val collect path)))))
+         (buf (find-file-noselect pfile)))
+    (unwind-protect
+        (with-current-buffer buf
+          (set-visited-file-name nil)
+          (buffer-disable-undo)
+          (erase-buffer)
+          (insert json)
+          (write-region (point-min) (point-max) pfile nil 'ok))
+      (kill-buffer buf))
+    (tern-restart-server pdir))
+  (tern-prjfix-dialog-kill-buffer))
+
+(defun tern-prjfix-dialog-kill-buffer (&optional model)
+  (let ((cbuf (current-buffer))
+        (win-num (length (window-list))))
+    (when (and (not (one-window-p))
+               (> win-num tern-prjfix-dialog-before-win-num))
+      (delete-window))
+    (kill-buffer cbuf)))
 
 (provide 'tern)
