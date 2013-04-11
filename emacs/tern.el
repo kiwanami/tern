@@ -113,7 +113,7 @@ list of strings, giving the binary name and arguments.")
 
 (defun tern-get-partial-file (at)
   (let* (min-indent start-pos end-pos
-         (min-pos (max 0 (- (point) 2000))))
+         (min-pos (max 0 (- at 2000))))
     (save-excursion
       (goto-char at)
       (loop
@@ -183,17 +183,15 @@ list of strings, giving the binary name and arguments.")
     (push `(end . ,(1- pos)) (cdr (assq 'query doc)))
     (tern-run-request
      (lambda (err data)
-       (cond ((not err)
-              (dolist (file files)
-                (when (equal (cdr (assq 'type file)) "full")
-                  (with-current-buffer (find-file-noselect (concat tern-project-dir (cdr (assq 'name file))))
-                    (setf tern-buffer-is-dirty nil))))
-              (funcall f data offset)
-              )
-             ((not (eq mode :silent))
-              (message "Request failed: %s" (cdr err))
-              )))
-    doc)))
+       (when (< tern-activity-since-command generation)
+         (cond ((not err)
+                (dolist (file files)
+                  (when (equal (cdr (assq 'type file)) "full")
+                    (with-current-buffer (find-file-noselect (expand-file-name (cdr (assq 'name file)) tern-project-dir))
+                      (setf tern-buffer-is-dirty nil))))
+                (funcall f data offset))
+               ((not (eq mode :silent)) (message "Request failed: %s" (cdr err))))))
+     doc)))
 
 (defun tern-send-buffer-to-server ()
   (tern-run-request (lambda (_err _data))
@@ -300,10 +298,11 @@ list of strings, giving the binary name and arguments.")
         (push "(" parts)
         (loop for arg in args for i from 0 do
               (unless (zerop i) (push ", " parts))
-              (when (car arg)
-                (push (if (eq i current-arg) (propertize (car arg) 'face 'highlight) (car arg)) parts)
-                (push ": " parts))
-              (push (propertize (cdr arg) 'face 'font-lock-type-face) parts))
+              (let ((name (or (car arg) "?")))
+                (push (if (eq i current-arg) (propertize name 'face 'highlight) name) parts))
+              (unless (equal (cdr arg) "?")
+                (push ": " parts)
+                (push (propertize (cdr arg) 'face 'font-lock-type-face) parts)))
         (push ")" parts)
         (when ret
           (push " -> " parts)
@@ -354,7 +353,7 @@ list of strings, giving the binary name and arguments.")
             (push change (cdr found))))
     (loop for (file . changes) in per-file do
           (setf changes (sort changes (lambda (a b) (> (cdr (assq 'start a)) (cdr (assq 'start b))))))
-          (find-file (concat (tern-project-dir) file))
+          (find-file (expand-file-name file (tern-project-dir)))
           (loop for change in changes do
                 (let ((start (1+ (cdr (assq 'start change))))
                       (end (1+ (cdr (assq 'end change)))))
@@ -372,17 +371,57 @@ list of strings, giving the binary name and arguments.")
 
 (defvar tern-find-definition-stack ())
 
-(defun tern-find-definition ()
+(defun tern-show-definition (data _offset)
+  (let* ((file (cdr (assq 'file data)))
+         (found (and file (setf file (expand-file-name (cdr (assq 'file data)) (tern-project-dir)))
+                     (tern-find-position file data))))
+    (if found
+        (progn
+          (push (cons (buffer-file-name) (point)) tern-find-definition-stack)
+          (let ((too-long (nthcdr 20 tern-find-definition-stack)))
+            (when too-long (setf (cdr too-long) nil)))
+          (tern-go-to-position file found))
+      (let ((url (cdr (assq 'url data))))
+        (if url
+            (browse-url url)
+          (message "No definition found."))))))
+
+(defun tern-at-interesting-expression ()
+  (if (member (get-text-property (point) 'face)
+              '(font-lock-comment-face font-lock-comment-delimiter-face font-lock-string-face))
+      nil
+    (let ((around (buffer-substring-no-properties (max 1 (1- (point))) (min (1+ (point)) (point-max)))))
+      (string-match "\\sw" around))))
+
+(defun tern-find-definition (&optional prompt-var)
   (interactive)
-  (tern-run-query (lambda (data _offset)
-                      (push (cons (buffer-file-name) (point)) tern-find-definition-stack)
-                      (let ((too-long (nthcdr 20 tern-find-definition-stack)))
-                        (when too-long (setf (cdr too-long) nil)))
-                      (tern-go-to-position (concat (tern-project-dir) (cdr (assq 'file data)))
-                                           (1+ (cdr (assq 'start data)))))
-                    "definition"
-                    (point)
-                    :full-file))
+  (let ((varname (and (or prompt-var (not (tern-at-interesting-expression)))
+                      (read-from-minibuffer "Variable: "))))
+    (tern-run-query #'tern-show-definition `((type . "definition") (variable . ,varname)) (point))))
+
+(defun tern-find-definition-by-name ()
+  (interactive)
+  (tern-find-definition t))
+
+(defun tern-find-position (file data)
+  (with-current-buffer (find-file-noselect file)
+    (let* ((start (1+ (cdr (assq 'start data))))
+           (cx-start (- start (cdr (assq 'contextOffset data))))
+           (cx (cdr (assq 'context data)))
+           (cx-end (+ cx-start (length cx))))
+      (if (and (<= (point-max) cx-end) (equal (buffer-substring-no-properties cx-start cx-end) cx))
+          start
+        (let (nearest nearest-dist)
+          (save-excursion
+            (goto-char (point-min))
+            (loop
+             (unless (search-forward cx nil t) (return))
+             (let* ((here (- (point) (length cx)))
+                    (dist (abs (- cx-start here))))
+               (when (or (not nearest-dist) (< dist nearest-dist))
+                 (setf nearest here nearest-dist dist)))))
+          (when nearest
+            (+ nearest (- start cx-start))))))))
 
 (defun tern-pop-find-definition ()
   (interactive)
@@ -401,6 +440,26 @@ list of strings, giving the binary name and arguments.")
   (tern-run-query (lambda (data _offset) (message (or (cdr (assq 'type data)) "Not found")))
                   "type"
                   (point)))
+
+;; Display docs
+
+(defvar tern-last-docs-url nil)
+(defun tern-get-docs ()
+  (interactive)
+  (if (and tern-last-docs-url (eq last-command 'tern-get-docs))
+      (progn
+        (browse-url tern-last-docs-url)
+        (setf tern-last-docs-url nil))
+    (tern-run-query (lambda (data _offset)
+                      (let ((url (cdr (assq 'url data))) (doc (cdr (assq 'doc data))))
+                        (cond (doc
+                               (setf tern-last-docs-url url)
+                               (message doc))
+                              (url
+                               (browse-url url))
+                              (t (message "Not found")))))
+                    "documentation"
+                    (point))))
 
 ;; Mode plumbing
 
@@ -433,9 +492,11 @@ list of strings, giving the binary name and arguments.")
 
 (defvar tern-mode-keymap (make-sparse-keymap))
 (define-key tern-mode-keymap [(meta ?.)] 'tern-find-definition)
+(define-key tern-mode-keymap [(control meta ?.)] 'tern-find-definition-by-name)
 (define-key tern-mode-keymap [(meta ?,)] 'tern-pop-find-definition)
 (define-key tern-mode-keymap [(control ?c) (control ?r)] 'tern-rename-variable)
 (define-key tern-mode-keymap [(control ?c) (control ?c)] 'tern-get-type)
+(define-key tern-mode-keymap [(control ?c) (control ?d)] 'tern-get-docs)
 
 (define-minor-mode tern-mode
   "Minor mode binding to the Tern JavaScript analyzer"
@@ -451,7 +512,7 @@ list of strings, giving the binary name and arguments.")
   (set (make-local-variable 'tern-last-point-pos) nil)
   (set (make-local-variable 'tern-last-completions) nil)
   (set (make-local-variable 'tern-last-argument-hints) nil)
-  (set (make-local-variable 'tern-buffer-is-dirty) (buffer-modified-p))
+  (set (make-local-variable 'tern-buffer-is-dirty) (and (buffer-modified-p) (cons (point-min) (point-max))))
   (make-local-variable 'completion-at-point-functions)
   (push 'tern-completion-at-point completion-at-point-functions)
   (add-hook 'before-change-functions 'tern-before-change nil t)

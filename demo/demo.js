@@ -45,6 +45,7 @@ function initEditor() {
     "Ctrl-I": findType,
     "Ctrl-Space": function(cm) { CodeMirror.showHint(cm, ternHints, {async: true}); },
     "Alt-.": jumpToDef,
+    "Shift-Alt-.": function(cm) { jumpToDef(cm, true); },
     "Alt-,": jumpBack,
     "Ctrl-Q": renameVar
   };
@@ -440,21 +441,69 @@ function moveTo(name, start, end) {
   curDoc.doc.setSelection(end, start);
 }
 
-function jumpToDef(cm) {
-  server.request(buildRequest(cm, "definition", false).request, function(error, data) {
-    if (error) return displayError(error);
-    if (data.file) {
-      jumpStack.push({file: curDoc.name,
-                      start: cm.getCursor("from"),
-                      end: cm.getCursor("to")});
-      moveTo(data.file, data.start, data.end);
-    } else if (data.url) {
-      document.getElementById("out").innerHTML = "Opening documentation in a new window.";
-      window.open(data.url);
-    } else {
-      displayError("Could not find a definition.");
-    }
-  });
+// The {line,ch} representation of positions makes this rather awkward.
+function findContext(data) {
+  var doc = findDoc(data.file).doc;
+  var before = data.context.slice(0, data.contextOffset).split("\n");
+  var startLine = data.start.line - (before.length - 1);
+  var start = Pos(startLine, (before.length == 1 ? start.ch : doc.getLine(startLine).length) - before[0].length);
+
+  var text = doc.getLine(startLine).slice(start.ch), off = 0;
+  for (var cur = startLine + 1; cur < doc.lineCount() && text.length < data.context.length; ++cur)
+    text += "\n" + doc.getLine(cur);
+  if (text.slice(0, data.context.length) == data.context) return data;
+
+  var cursor = doc.getSearchCursor(data.context, 0, false);
+  var nearest, nearestDist = Infinity;
+  while (cursor.findNext()) {
+    var from = cursor.from(), dist = Math.abs(from.line - start.line) * 10000;
+    if (!dist) dist = Math.abs(from.ch - start.ch);
+    if (dist < nearestDist) { nearest = from; nearestDist = dist; }
+  }
+  if (!nearest) return null;
+
+  if (before.length == 1)
+    nearest.ch += before[0].length;
+  else
+    nearest = Pos(nearest.line + (before.length - 1), before[before.length - 1].length);
+  if (data.start.line == data.end.line)
+    end = Pos(nearest.line, nearest.ch + (data.end.ch - data.start.ch));
+  else
+    end = Pos(nearest.line + (data.end.line - data.start.line), data.end.ch);
+  return {start: nearest, end: end};
+}
+
+function atInterestingExpression(cm) {
+  var pos = cm.getCursor("end"), tok = cm.getTokenAt(pos);
+  if (tok.start < pos.ch && (tok.type == "comment" || tok.type == "string")) return false;
+  return /\w/.test(cm.getLine(pos.line).slice(Math.max(pos.ch - 1, 0), pos.ch + 1));
+}
+
+function jumpToDef(cm, named) {
+  if (named == true || !atInterestingExpression(cm))
+    cm.openDialog("Jump to variable: <input type=text>", inner);
+  else
+    inner();
+
+  function inner(v) {
+    server.request(buildRequest(cm, {type: "definition", variable: v || null}).request, function(error, data) {
+      if (error) return displayError(error);
+      if (data.file) {
+        var found = findContext(data);
+        if (!found)
+          return displayError("Could not find a definition.");
+        jumpStack.push({file: curDoc.name,
+                        start: cm.getCursor("from"),
+                        end: cm.getCursor("to")});
+        moveTo(data.file, found.start, found.end);
+      } else if (data.url) {
+        document.getElementById("out").innerHTML = "Opening documentation in a new window.";
+        window.open(data.url);
+      } else {
+        displayError("Could not find a definition.");
+      }
+    });
+  }
 }
 
 function jumpBack(cm) {
@@ -463,6 +512,7 @@ function jumpBack(cm) {
   moveTo(pos.file, pos.start, pos.end);
 }
 
+var nextChangeOrig = 0;
 function applyChanges(changes) {
   var perFile = Object.create(null);
   for (var i = 0; i < changes.length; ++i) {
@@ -471,10 +521,11 @@ function applyChanges(changes) {
   }
   for (var file in perFile) {
     var chs = perFile[file], doc = findDoc(file).doc;
-    chs.sort(function(a, b) { return b.start - a.start; });
+    chs.sort(function(a, b) { return b.start.line - a.start.line || b.start.ch - a.start.ch; });
+    var origin = "*" + (++nextChangeOrig);
     for (var i = 0; i < chs.length; ++i) {
       var ch = chs[i];
-      doc.replaceRange(ch.text, ch.start, ch.end);
+      doc.replaceRange(ch.text, ch.start, ch.end, origin);
     }
   }
 }

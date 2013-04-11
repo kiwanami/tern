@@ -6,11 +6,11 @@
 
 (function(mod) {
   if (typeof exports == "object" && typeof module == "object") // CommonJS
-    return mod(exports, require("./infer"));
+    return mod(exports, require("./infer"), require("acorn/util/walk"));
   if (typeof define == "function" && define.amd) // AMD
-    return define(["exports", "./infer"], mod);
-  mod(self.tern || (self.tern = {}), tern); // Plain browser env
-})(function(exports, infer) {
+    return define(["exports", "./infer", "acorn/util/walk"], mod);
+  mod(self.tern || (self.tern = {}), tern, acorn.walk); // Plain browser env
+})(function(exports, infer, walk) {
   "use strict";
 
   var plugins = Object.create(null);
@@ -43,7 +43,6 @@
     },
     definition: {
       takesFile: true,
-      fullFile: true,
       run: findDef
     },
     refs: {
@@ -171,6 +170,7 @@
         return("Can't run a " + query.type + " query on a file fragment");
 
       infer.withContext(srv.cx, function() {
+        infer.flush();
         var result;
         try {
           result = queryType.run(srv, query, file);
@@ -183,10 +183,7 @@
     });
   }
 
-  var depth = 0;
   function analyzeFile(srv, file) {
-    if (depth) console.trace("calling inside");
-    ++depth;
     infer.withContext(srv.cx, function() {
       file.scope = srv.cx.topScope;
       srv.signal("beforeLoad", file);
@@ -195,7 +192,6 @@
       infer.purgeMarkedVariables(file.scope);
       srv.signal("afterLoad", file);
     });
-    --depth;
     return file;
   }
 
@@ -317,7 +313,9 @@
     // This is a partial file
 
     var realFile = findFile(srv.files, file.name);
-    var offset = file.offset != null ? file.offset : findLineStart(file, file.offsetLine) || 0;
+    var offset = file.offset;
+    if (offset == null)
+      offset = file.offset = findLineStart(realFile, file.offsetLines) || 0;
     var line = firstLine(file.text);
     var foundPos = findMatchingPosition(line, realFile.text, offset);
     var pos = foundPos == null ? Math.max(0, realFile.text.lastIndexOf("\n", offset)) : foundPos;
@@ -452,7 +450,6 @@
       // out when no prefix is provided.
       if (query.omitObjectPrototype !== false && obj == srv.cx.protos.Object && !word) return;
       if (query.filter !== false && word && prop.indexOf(word) != 0) return;
-      var val = obj.props[prop];
       for (var i = 0; i < completions.length; ++i) {
         var c = completions[i];
         if ((wrapAsObjs ? c.name : c) == prop) return;
@@ -461,6 +458,7 @@
       completions.push(rec);
 
       if (query.types || query.docs || query.urls) {
+        var val = obj ? obj.props[prop] : infer.ANull;
         infer.resetGuessing();
         var type = val.getType();
         rec.guess = infer.didGuess();
@@ -480,6 +478,8 @@
       var tp = infer.expressionType(memberExpr);
       if (tp) infer.forAllPropertiesOf(tp, gather);
 
+      if (!completions.length && query.guess !== false && tp && tp.guessProperties)
+        tp.guessProperties(function(p, o, d) {if (p != word) gather(p, o, d);});
       if (!completions.length && word.length >= 2 && query.guess !== false)
         for (var prop in srv.cx.props) gather(prop, srv.cx.props[prop][0], 0);
     } else {
@@ -503,13 +503,20 @@
 
   var findExpr = exports.findQueryExpr = function(file, query) {
     if (query.end == null) throw new Error("missing .query.end field");
-    var start = query.start && resolvePos(file, query.start), end = resolvePos(file, query.end);
-    var expr = infer.findExpressionAt(file.ast, start, end, file.scope);
-    if (expr) return expr;
-    expr = infer.findExpressionAround(file.ast, start, end, file.scope);
-    if (expr && (start == null || start - expr.node.start < 20) &&
-        expr.node.end - end < 20) return expr;
-    throw new Error("No expression at the given position.");
+
+    if (query.variable) {
+      var scope = infer.scopeAt(file.ast, query.end, file.scope);
+      return {node: {type: "Identifier", name: query.variable, start: query.end, end: query.end + 1},
+              state: scope};
+    } else {
+      var start = query.start && resolvePos(file, query.start), end = resolvePos(file, query.end);
+      var expr = infer.findExpressionAt(file.ast, start, end, file.scope);
+      if (expr) return expr;
+      expr = infer.findExpressionAround(file.ast, start, end, file.scope);
+      if (expr && (start == null || start - expr.node.start < 20 || expr.node.end - end < 20))
+        return expr;
+      throw new Error("No expression at the given position.");
+    }
   };
 
   function findTypeAt(_srv, query, file) {
@@ -558,6 +565,10 @@
     return {url: url || null, doc: doc || null};
   }
 
+  function isInAST(node, ast) {
+    return walk.findNodeAt(ast, node.start, node.end, node.type);
+  }
+
   function findDef(srv, query, file) {
     var expr = findExpr(file, query), def, url, doc, fileName, guess = false;
     if (expr.node.type == "Identifier") {
@@ -588,10 +599,22 @@
     }
     var result = {guess: guess};
     if (def) {
-      var defFile = findFile(srv.files, fileName);
-      result.start = outputPos(query, defFile, def.start);
-      result.end = outputPos(query, defFile, def.end);
+      var inFragment = file.type == "part" && file.name == fileName && isInAST(def, file.ast);
+      var outerFile = findFile(srv.files, fileName), defFile = inFragment ? file : outerFile;
+      var start = outputPos(query, defFile, def.start), end = outputPos(query, defFile, def.end);
+      if (inFragment) {
+        if (query.lineCharPositions) {
+          var lines = file.offsetLines != null ? file.offsetLines : asLineChar(file, file.offset).line;
+          start.line += lines; end.line += end;
+        } else {
+          start += file.offset; end += file.offset;
+        }
+      }
+      result.start = start; result.end = end;
       result.file = fileName;
+      var cxStart = Math.max(0, def.start - 50);
+      result.contextOffset = def.start - cxStart;
+      result.context = defFile.text.slice(cxStart, cxStart + 50);
     }
     if (url) result.url = url;
     if (doc) result.doc = doc;
