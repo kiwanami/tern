@@ -478,10 +478,12 @@ list of strings, giving the binary name and arguments.")
     (setf tern-last-argument-hints nil)))
 
 (defun tern-post-command ()
-  (unless (eq (point) tern-last-point-pos)
-    (setf tern-last-point-pos (point))
-    (setf tern-activity-since-command tern-command-generation)
-    (tern-update-argument-hints)))
+  (condition-case err
+      (unless (eq (point) tern-last-point-pos)
+        (setf tern-last-point-pos (point))
+        (setf tern-activity-since-command tern-command-generation)
+        (tern-update-argument-hints))
+    (t  (message "tern-post-command : %S" err))))
 
 (defun tern-left-buffer ()
   (declare (special buffer-list-update-hook))
