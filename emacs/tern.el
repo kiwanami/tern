@@ -20,6 +20,12 @@
 (defvar tern-server-map nil
   "map (project-dir -> (port process)). This variable is initialized at `tern-mode-enable'.")
 
+(defvar tern-show-argument-hints-popup t "If non-nil, popup arguments hint.")
+
+(defvar tern-update-argument-hints-timer 700 "millisecond.")
+
+(defvar tern-change-buffer-timer 700 "millisecond.")
+
 (defun tern-request (port doc)
   (deferred:nextc
     (request-deferred
@@ -231,6 +237,22 @@ list of strings, giving the binary name and arguments.")
 
 ;; Argument hints
 
+(defvar tern-update-argument-hints-deferred nil
+  "If non-nil, `tern-update-argument-hints' will be called later.")
+
+(defun tern-update-argument-hints-deferred ()
+  (when tern-update-argument-hints-deferred
+    (deferred:cancel tern-update-argument-hints-deferred))
+  (setq tern-update-argument-hints-deferred
+        (deferred:$
+          (deferred:wait-idle tern-update-argument-hints-timer)
+          (deferred:nextc it
+            (lambda (x)
+              (condition-case err
+                  (tern-update-argument-hints)
+                (t (message "tern-update-argument-hints : %S" err)))
+              (setq tern-update-argument-hints-deferred nil))))))
+
 (defun tern-update-argument-hints ()
   (let ((opening-paren (cadr (syntax-ppss))))
     (when (and opening-paren (equal (char-after opening-paren) ?\())
@@ -310,7 +332,7 @@ list of strings, giving the binary name and arguments.")
       (let (message-log-max
             (str (apply #'concat (nreverse parts))))
         (message str)
-        (when (featurep 'popup)
+        (when (and tern-show-argument-hints-popup (featurep 'popup))
           (tern-show-argument-hints-popup))))))
 
 (defun tern-show-argument-hints-popup ()
@@ -469,7 +491,7 @@ list of strings, giving the binary name and arguments.")
             (cdr tern-buffer-is-dirty) (max (cdr tern-buffer-is-dirty) end))
     (setf tern-buffer-is-dirty (cons start end)))
   (when (> (- (cdr tern-buffer-is-dirty) (car tern-buffer-is-dirty)) 4000)
-    (run-at-time "200 millisec" nil (lambda ()
+    (run-at-time (format "%i millisec" tern-change-buffer-timer) nil (lambda ()
                                       (when tern-buffer-is-dirty
                                         (setf tern-buffer-is-dirty nil)
                                         (tern-send-buffer-to-server)))))
@@ -482,7 +504,7 @@ list of strings, giving the binary name and arguments.")
       (unless (eq (point) tern-last-point-pos)
         (setf tern-last-point-pos (point))
         (setf tern-activity-since-command tern-command-generation)
-        (tern-update-argument-hints))
+        (tern-update-argument-hints-deferred))
     (t  (message "tern-post-command : %S" err))))
 
 (defun tern-left-buffer ()
