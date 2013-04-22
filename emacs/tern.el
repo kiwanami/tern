@@ -12,7 +12,6 @@
 
 (eval-when-compile (require 'cl))
 (require 'json)
-
 (require 'request-deferred)
 (require 'concurrent)
 (require 'widget-mvc)
@@ -128,7 +127,8 @@ list of strings, giving the binary name and arguments.")
              (pos (line-beginning-position)))
          (when (or (not min-indent) (< indent min-indent))
            (setf min-indent indent min-indent-pos pos))
-         (goto-char pos)))
+         (goto-char pos)
+         (when (<= pos min-pos) (return))))
       (unless start-pos (goto-char min-pos) (setf start-pos (line-beginning-position))))
     (save-excursion
       (goto-char (min (+ at 1000) (point-max)))
@@ -171,16 +171,14 @@ list of strings, giving the binary name and arguments.")
         (doc `((query . ,query)))
         (files (and (eq mode :full-file) (tern-modified-sibling-buffers)))
         file-name
-        (offset 0)
         (pos pos))
     (cond
      ((not tern-buffer-is-dirty) 
       (setf file-name (tern-project-relative-file)))
      ((and (not (eq mode :full-file)) (> (buffer-size) 8000))
       (push (tern-get-partial-file pos) files)
-      (setf offset (cdr (assq 'offset (car files)))
-            file-name "#0")
-      (decf pos offset))
+      (setf file-name "#0")
+      (decf pos (cdr (assq 'offset (car files)))))
      (t
       (push `((type . "full") (text . ,(buffer-string)) (name . ,(tern-project-relative-file))) files)
       (setf file-name (tern-project-relative-file))))
@@ -195,7 +193,7 @@ list of strings, giving the binary name and arguments.")
                   (when (equal (cdr (assq 'type file)) "full")
                     (with-current-buffer (find-file-noselect (expand-file-name (cdr (assq 'name file)) tern-project-dir))
                       (setf tern-buffer-is-dirty nil))))
-                (funcall f data offset))
+                (funcall f data))
                ((not (eq mode :silent)) (message "Request failed: %s" (cdr err))))))
      doc)))
 
@@ -212,10 +210,10 @@ list of strings, giving the binary name and arguments.")
       (lambda ()
         (tern-run-query #'tern-do-complete "completions" (point)))))
 
-(defun tern-do-complete (data offset)
+(defun tern-do-complete (data)
   (let ((cs (loop for elt across (cdr (assq 'completions data)) collect elt))
-        (start (+ 1 offset (cdr (assq 'start data))))
-        (end (+ 1 offset (cdr (assq 'end data)))))
+        (start (+ 1 (cdr (assq 'start data))))
+        (end (+ 1 (cdr (assq 'end data)))))
     (setf tern-last-completions (list (buffer-substring-no-properties start end) start end cs))
     (completion-in-region start end cs)))
 
@@ -258,7 +256,7 @@ list of strings, giving the binary name and arguments.")
     (when (and opening-paren (equal (char-after opening-paren) ?\())
       (if (and tern-last-argument-hints (eq (car tern-last-argument-hints) opening-paren))
           (tern-show-argument-hints)
-        (tern-run-query (lambda (data _offset)
+        (tern-run-query (lambda (data)
                           (let ((type (tern-parse-function-type data)))
                             (when type
                               (setf tern-last-argument-hints (cons opening-paren type))
@@ -367,7 +365,7 @@ list of strings, giving the binary name and arguments.")
 
 ;; Refactoring ops
 
-(defun tern-do-refactor (data _offset)
+(defun tern-do-refactor (data)
   (let ((per-file ())
         (orig-buffer (current-buffer)))
     (loop for change across (cdr (assq 'changes data)) do
@@ -394,7 +392,7 @@ list of strings, giving the binary name and arguments.")
 
 (defvar tern-find-definition-stack ())
 
-(defun tern-show-definition (data _offset)
+(defun tern-show-definition (data)
   (let* ((file (cdr (assq 'file data)))
          (found (and file (setf file (expand-file-name (cdr (assq 'file data)) (tern-project-dir)))
                      (tern-find-position file data))))
@@ -460,7 +458,7 @@ list of strings, giving the binary name and arguments.")
 
 (defun tern-get-type ()
   (interactive)
-  (tern-run-query (lambda (data _offset) (message (or (cdr (assq 'type data)) "Not found")))
+  (tern-run-query (lambda (data) (message (or (cdr (assq 'type data)) "Not found")))
                   "type"
                   (point)))
 
@@ -473,7 +471,7 @@ list of strings, giving the binary name and arguments.")
       (progn
         (browse-url tern-last-docs-url)
         (setf tern-last-docs-url nil))
-    (tern-run-query (lambda (data _offset)
+    (tern-run-query (lambda (data)
                       (let ((url (cdr (assq 'url data))) (doc (cdr (assq 'doc data))))
                         (cond (doc
                                (setf tern-last-docs-url url)
@@ -492,10 +490,13 @@ list of strings, giving the binary name and arguments.")
             (cdr tern-buffer-is-dirty) (max (cdr tern-buffer-is-dirty) end))
     (setf tern-buffer-is-dirty (cons start end)))
   (when (> (- (cdr tern-buffer-is-dirty) (car tern-buffer-is-dirty)) 4000)
-    (run-at-time (format "%i millisec" tern-change-buffer-timer) nil (lambda ()
-                                      (when tern-buffer-is-dirty
-                                        (setf tern-buffer-is-dirty nil)
-                                        (tern-send-buffer-to-server)))))
+    (run-at-time (format "%i millisec" tern-change-buffer-timer) nil 
+		 (lambda (buf)
+		   (with-current-buffer buf
+                     (when tern-buffer-is-dirty
+                       (setf tern-buffer-is-dirty nil)
+                       (tern-send-buffer-to-server))))
+		 (current-buffer)))
   (setf tern-last-point-pos nil)
   (when (and tern-last-argument-hints (<= (point) (car tern-last-argument-hints)))
     (setf tern-last-argument-hints nil)))

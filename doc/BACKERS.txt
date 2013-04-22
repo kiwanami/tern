@@ -1,0 +1,392 @@
+Backers of the donation drive that made Tern open source
+See http://www.indiegogo.com/projects/tern-intelligent-javascript-editing
+
+Super backers:
+
+Telerik
+grayrest
+peterlubbers
+remysharp
+Anton Kovalyov
+merynstol
+rahul5
+raynos2
+sgruhier
+Tim Branyen
+
+Further backers:
+
+Christophe Porteneuve
+JAMES MORRIN
+mmikulicic
+Morgan Roderick
+Paul Irish
+wesen
+Aron Woost
+Brandon Frohs
+Dan Rogers
+Jan Krems
+Jörn Zaefferer
+Karl Forshaw
+Matt Claypotch
+Miguel Castillo
+mihai.bazon
+patrick.wolf
+Rebecca Murphey
+Scott Sauyet
+Todd Wolfson
+Erik Söhnel
+Matt Pass
+Paul Grock
+Damian Soto
+FAYOLLE
+Pierre Spring
+Douglas Soares de Andrade
+egonelbre
+Gavin Suntop
+ivan4th
+Matt Field
+tiffany.conroy
+Markus Messner-Chaney
+fronx
+A/C Luis Cardoso FeedZai S.A.
+aaron bieber
+Aaron Toth
+Adrian Christopher Schaedle
+Aijaz Mohammad
+Alberto Zaccagni
+Alex Sexton
+Alexandre Gaudencio
+Amrit Sundar Tuladhar
+Andreas Köberle
+Andrey Okonechnikov
+Andrius Kazdailevicius
+Antons Jakimovs
+Antranig Basman
+aowerb
+Arnout Kazemier
+Artur Carvalho
+Asbjørn Andersen
+Balázs Galambosi
+Baptiste Millou
+Bastiaan Rasing
+Ben Marvell
+Benoît Zugmeyer
+Björn Günzel
+Brad Dougherty
+Brandon Satrom
+Brian Brennan
+Brian Frichette
+bruce.mitchener
+Byron Darlison
+Chris Engebretson
+Christoffer Björkskog
+Christoph Schwienheer, bei Zierock
+Christopher Wyllie
+Codevise Solutions / Vangelis Tsoumenis 
+Cristian Carlesso
+Cuong Vo
+Damien Klinnert
+Dan
+Dane Summers
+Daniel Kloosterman
+Daniel Wippermann
+Darren Waddell
+Daryl Koopersmith
+David Håsäther
+David JENNI
+David Sargeant
+David White
+Dethe Elza
+Dirk Ginader
+Dmitri Molchanenko
+Doc No
+Dominique Poulain
+Drew Miller
+Drew Neil
+Edd Hannay
+edouard duplessis
+Eike Send
+Felix Raab
+Ferdinand Salis-Samaden
+Filip Noetzel
+Fronx Wurmus
+Gleb Mazovetskiy
+Gregers Rygg
+Hans Christian Reinl
+Hans Hübner
+Henrik vendelbo
+Henry Allen-Tilford
+Herculano Campos
+Hieu Nguyen
+holmlundlists
+Jack Franklin
+Jan Lehnardt
+Jan Löfberg
+Jans Aasman
+Jason LeMoine
+Jendrik Johannes
+jeroen14
+Jim Tittsler
+Joel M Hooks
+John Pallister
+Jonas Coch
+Jonathan Smart
+Joshua Kalis
+José María Balsas
+Julian Wachholz
+Justin Lowery
+Jyri Tuulos
+Karl J Smith
+Karl Vestin
+Kasper Fabæch Brandt
+Kevin Vlahos
+ki.ber
+Konstantin Käfer
+Kurt MacDonald
+Kyle Barrow
+Kyle Powers
+Lajos Koszti
+Laurie Kemmerer
+loïc moriamé
+Lukas F. Hartmann
+Luke Arduini
+Luke Karrys
+Luís Almeida
+Maciej Małecki
+Maksim Lin
+Marcin Wosinek
+Marco Rogers
+Marius Gundersen
+Martin Hansen
+Martin Moellenbeck
+Mat Brennan
+Matt Smillie
+Matthew Buscemi
+Matthew L Daniel
+Maurizio Mangione
+Max F. Albrecht
+Michael Goulbourn
+Michael Kessler
+Michael Lehenbauer
+Michael Russell
+Michael Zehrer
+Mikael Abrahamsson
+Mikko Ohtamaa
+moniker
+Niall O'Higgins
+Nicholas Niemeir
+Nicky B Hajal
+Niclas Hoyer
+Niklas Lindgren
+olav5
+Oskar Schöldström
+Paolo Negri
+Patrick Arminio
+Patrik Henningsson
+Paul Conroy
+Paul Dijou
+Paul Young
+Peeter Tomberg
+Per Ejeklint
+Per Thulin
+Peter Wong
+Phillip Strong
+pjschaffner
+Raphael LANG
+raycohen
+Richard Powell
+Rick Richardson
+Robert Oroszi
+Robin Brandt
+Ryan Morlok
+RYAN WACHTL
+Røsaker, Sveinung
+Salvatore Formisano
+Scott White
+Seth House
+Simon Cossar
+Simon Goumaz
+Simon Jockers
+Stefan Gojan
+Stefan Hayden
+Stefan Kienzle
+Stephan Hoyer
+steve heron
+tape.io GmbH / Sascha Reuter
+Thanasis Polychronakis
+Thomas Bassetto
+Thomas Roger
+Tiago Rodrigues
+Tobias Kaatz
+Tom MacWright
+Tomasz Stryjewski
+Tommi Laine
+Tony Atkins
+Trey Griffith
+Vernon Kesner
+Victor Nguyen
+Vitaliy Meshchaninov
+Wolfram Twelker (u+i interact)
+Zachary King
+Zaki Manian
+Ziga Ham
+Øystein Kjærnet
+范致宣
+aritter
+David Flanagan
+krof.drakula
+LEICHNIG Loyce
+assaf3
+hebrox
+Kasra Kyanzadeh
+Pauld Aoust
+Roland Warmerdam
+thomas.gorny
+Thomas Greiner
+Anders Madsen
+ceejceej
+curist.cyc
+dannycoates1
+David Owens
+dinalamdany
+dsmlover
+ebraun1
+eugen.tudorancea
+Frode Nilsen
+glen15
+irakli
+JackEllis1
+Jon Gjengset
+mwsherman
+ncoder2000
+oogatta
+owz534
+rekurzija
+rvagg
+shikakaa
+signup1363131450
+sressler1
+Stephan Seidt
+tristen.brown
+volodymyrprokopyuk
+wbinnssmith
+austin.r.montoya
+andr1
+andrewjones86
+bogdan.durla
+botequilha
+boyerchen
+brauer1
+Dmitry Semenov
+dominik.rask
+eliasgs
+haydenchambers
+hugomallet06
+ithkuil
+jacek3
+jfromaniello
+Jiri Zuna
+johannes20
+kylehardgrave
+larry8
+lorenz.anmey
+Martin Hečko
+Max Shishkin
+Michi-Mueller
+oliverjash
+robingoos
+robmcbride
+roriz87
+RRTimmerman
+Sascha Greiff
+Sbastien Lebel
+serkanyersen
+signup1345117742
+sindresorhus
+steve228uk
+tbartels
+thomasruoff
+twilightfeel
+wil.moore
+xavier.seignard
+from.indiegogo.71
+tomgreuter
+Andrew Blackshaw
+Ben
+bitomule
+luiz.felipe.gp
+Nagy Istvn
+pembeci
+peterjosling
+spacehelmetboy
+spam58
+xn--mlform-iua
+bryan.poetz
+i.zakurenyi
+Kuno Woudt
+michal17
+Alex Koloskov
+antonio.murdaca
+bestander
+bjarne.heden
+bobfoster
+BrandonWilliams5
+bzmwillemsen
+carwinyoung
+dainstore
+Dan Bravender
+Daniel Hjelm
+daniel.lager
+Dariusz Mlodnicki
+DevinClark1
+dragos
+dskreppsigg
+dyuri
+eelke
+Ekrem Bykkaya
+Erik Dasque
+erik.a.kronberg
+erwinmombay
+excelenter
+fishlevel
+florent.galland
+francescodip
+franz.r
+Henning Schrder
+Hugo Agbonon
+Hwulex
+iley1
+Isaac Z. Schlueter
+Ivan Nikoli
+James Westgate
+james.r.campos
+Januardo Kusuma
+jdduarte
+jdharding
+jose48
+justin.yost
+karl58
+Kasper Souren
+korylprince
+kris80
+Kristofor Carle
+matjazl
+Matthew Dierker
+mcw0933
+mihaipaun01
+mr.pohoda
+naoyuki.kanezawa
+Nikita Vasilyev
+NIkkiStevens
+radovan.lozej
+rob.alarcon
+roger56
+sngsheftel
+snorremd
+steele
+Stefan Huber (Signalwerk)
+tanel
+tom.p.parker
+travis.heeter
+UniqueVN
