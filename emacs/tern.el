@@ -189,7 +189,7 @@ list of strings, giving the binary name and arguments.")
     (push `(end . ,(1- pos)) (cdr (assq 'query doc)))
     (tern-run-request
      (lambda (err data)
-       (when (< tern-activity-since-command generation)
+       (when (or t (= tern-activity-since-command generation))
          (cond ((not err)
                 (dolist (file files)
                   (when (equal (cdr (assq 'type file)) "full")
@@ -332,7 +332,8 @@ list of strings, giving the binary name and arguments.")
       (let (message-log-max
             (str (apply #'concat (nreverse parts))))
         (message str)
-        (when (and tern-show-argument-hints-popup (featurep 'popup))
+        (when (and tern-show-argument-hints-popup (featurep 'popup)
+                   (not (ac-menu-live-p)))
           (tern-show-argument-hints-popup))))))
 
 (defun tern-show-argument-hints-popup ()
