@@ -1,6 +1,6 @@
 py << endpy
 
-import vim, os, platform, subprocess, urllib2, webbrowser, json, re, select
+import vim, os, platform, subprocess, urllib2, webbrowser, json, re, select, time
 
 def tern_displayError(err):
   vim.command("echomsg " + json.dumps(str(err)))
@@ -47,31 +47,46 @@ def tern_findServer(ignorePort=False):
     if port != ignorePort:
       vim.command("let b:ternPort = " + str(port))
       return (port, True)
-  return tern_startServer()
+  return (tern_startServer(), False)
 
 def tern_startServer():
   win = platform.system() == "Windows"
-  proc = subprocess.Popen(vim.eval("g:tern#command"), cwd=tern_projectDir(),
+  pdir = tern_projectDir()
+  proc = subprocess.Popen(vim.eval("g:tern#command"), cwd=pdir,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=win)
   output = ""
-  fds = [proc.stdout, proc.stderr]
-  while len(fds):
-    ready = select.select(fds, [], [], .4)[0]
-    if not len(ready): break
-    line = ready[0].readline()
-    if not line:
-      fds.remove(ready[0])
-      continue
-    match = re.match("Listening on port (\\d+)", line)
-    if match:
-      port = int(match.group(1))
-      vim.command("let b:ternPort = " + str(port))
-      vim.command("let g:ternPID = "+str(proc.pid))
-      return (port, False)
-    else:
-      output += line
+
+  if not win:
+    fds = [proc.stdout, proc.stderr]
+    while len(fds):
+      ready = select.select(fds, [], [], .4)[0]
+      if not len(ready): break
+      line = ready[0].readline()
+      if not line:
+        fds.remove(ready[0])
+        continue
+      match = re.match("Listening on port (\\d+)", line)
+      if match:
+        port = int(match.group(1))
+        vim.command("let b:ternPort = " + str(port))
+        vim.command("let g:ternPID = "+str(proc.pid))
+        return port
+      else:
+        output += line
+  else:
+    # The relatively sane approach above doesn't work on windows, so
+    # we poll for the file
+    portFile = os.path.join(pdir, ".tern-port")
+    slept = 0
+    while True:
+      if os.path.isfile(portFile): return int(open(portFile, "r").read())
+      if slept > 8: break
+      time.sleep(.05)
+      slept += 1
+    output = proc.stderr.read() + proc.stdout.read()
+
   tern_displayError("Failed to start server" + (output and ":\n" + output))
-  return (None, False)
+  return None
 
 def tern_relativeFile():
   filename = vim.eval("expand('%:p')")
@@ -110,7 +125,7 @@ def tern_bufferFragment():
           "text": tern_bufferSlice(buf, start, end),
           "offsetLines": start}
 
-def tern_runCommand(query, pos=None, mode=None):
+def tern_runCommand(query, pos=None, fragments=True):
   if isinstance(query, str): query = {"type": query}
   if (pos is None):
     curRow, curCol = vim.current.window.cursor
@@ -122,7 +137,7 @@ def tern_runCommand(query, pos=None, mode=None):
   doc = {"query": query, "files": []}
   if curSeq == vim.eval("b:ternBufferSentAt"):
     fname, sendingFile = (tern_relativeFile(), False)
-  elif len(vim.current.buffer) > 250:
+  elif len(vim.current.buffer) > 250 and fragments:
     f = tern_bufferFragment()
     doc["files"].append(f)
     pos = {"line": pos["line"] - f["offsetLines"], "ch": pos["ch"]}
@@ -249,6 +264,23 @@ def tern_lookupDefinition(cmd):
   else:
     vim.command("echo 'no definition found'")
 
+def tern_refs():
+  data = tern_runCommand("refs", fragments=False)
+  if data is None: return
+
+  refs = []
+  for ref in data["refs"]:
+    lnum     = ref["start"]["line"] + 1
+    col      = ref["start"]["ch"] + 1
+    filename = ref["file"]
+    name     = data["name"]
+    text     = vim.eval("getbufline('" + filename + "'," + str(lnum) + ")")
+    refs.append({"lnum": lnum,
+                 "col": col,
+                 "filename": filename,
+                 "text": name + " (file not loaded)" if len(text)==0 else text[0]})
+  vim.command("call setloclist(0," + json.dumps(refs) + ") | lopen")
+
 endpy
 
 if !exists('g:tern#command')
@@ -287,6 +319,7 @@ command! TernDef py tern_lookupDefinition("edit")
 command! TernDefPreview py tern_lookupDefinition("pedit")
 command! TernDefSplit py tern_lookupDefinition("split")
 command! TernDefTab py tern_lookupDefinition("tabe")
+command! TernRefs py tern_refs()
 
 function! tern#LookupType()
   python tern_lookupType()
@@ -304,6 +337,9 @@ function! tern#LookupArgumentHints()
 endfunction
 
 function! tern#Enable()
+  if stridx(&buftype, "nofile") > -1 || stridx(&buftype, "nowrite") > -1
+    return
+  endif
   let b:ternPort = 0
   let b:ternProjectDir = ''
   let b:ternLastCompletion = []
@@ -311,8 +347,7 @@ function! tern#Enable()
   let b:ternBufferSentAt = -1
   let b:ternInsertActive = 0
   setlocal omnifunc=tern#Complete
-  nnoremap <buffer><expr> t tern#LookupType()
-  nnoremap <buffer> <F3> TernDef
+  nnoremap <buffer><silent> <F3> :TernRef<cr>
   augroup TernAutoCmd
     autocmd!
     autocmd BufLeave <buffer> :py tern_sendBufferIfDirty()
