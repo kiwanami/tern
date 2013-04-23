@@ -110,7 +110,7 @@ list of strings, giving the binary name and arguments.")
 (defvar tern-project-dir nil)
 
 (defvar tern-last-completions nil)
-(defvar tern-last-argument-hints nil)
+(defvar tern-last-argument-hints nil "hints object -> `tern-argument-hints-new'")
 (defvar tern-buffer-is-dirty nil)
 
 (defun tern-project-relative-file ()
@@ -238,6 +238,19 @@ list of strings, giving the binary name and arguments.")
 (defvar tern-update-argument-hints-deferred nil
   "If non-nil, `tern-update-argument-hints' will be called later.")
 
+(defun tern-argument-hints-new (paren type doc)
+  (list paren type doc))
+
+(defun tern-argument-hints-paren (hints)
+  (car hints))
+
+(defun tern-argument-hints-type (hints)
+  (cadr hints))
+
+(defun tern-argument-hints-doc (hints)
+  (nth 2 hints))
+
+
 (defun tern-update-argument-hints-deferred ()
   (when tern-update-argument-hints-deferred
     (deferred:cancel tern-update-argument-hints-deferred))
@@ -254,14 +267,17 @@ list of strings, giving the binary name and arguments.")
 (defun tern-update-argument-hints ()
   (let ((opening-paren (cadr (syntax-ppss))))
     (when (and opening-paren (equal (char-after opening-paren) ?\())
-      (if (and tern-last-argument-hints (eq (car tern-last-argument-hints) opening-paren))
+      (if (and tern-last-argument-hints
+               (eq (tern-argument-hints-paren tern-last-argument-hints)
+                   opening-paren))
           (tern-show-argument-hints)
         (tern-run-query (lambda (data)
-                          (let ((type (tern-parse-function-type data)))
+                          (let ((type (tern-parse-function-type data))
+                                (doc (cdr (assq 'doc data))))
                             (when type
-                              (setf tern-last-argument-hints (cons opening-paren type))
+                              (setf tern-last-argument-hints (tern-argument-hints-new opening-paren type doc))
                               (tern-show-argument-hints))))
-                        `((type . "type")
+                        `((type . "type") (docs . t) (types . t)
                           (preferFunction . t))
                         opening-paren
                         :silent)))))
@@ -310,33 +326,38 @@ list of strings, giving the binary name and arguments.")
 
 (defun tern-show-argument-hints ()
   (declare (special message-log-max))
-  (destructuring-bind (paren . type) tern-last-argument-hints
-    (let ((parts ())
-          (current-arg (tern-find-current-arg paren)))
-      (destructuring-bind (name args ret) type
-        (push (propertize name 'face 'font-lock-function-name-face) parts)
-        (push "(" parts)
-        (loop for arg in args for i from 0 do
-              (unless (zerop i) (push ", " parts))
-              (let ((name (or (car arg) "?")))
-                (push (if (eq i current-arg) (propertize name 'face 'highlight) name) parts))
-              (unless (equal (cdr arg) "?")
-                (push ": " parts)
-                (push (propertize (cdr arg) 'face 'font-lock-type-face) parts)))
-        (push ")" parts)
-        (when ret
-          (push " -> " parts)
-          (push (propertize ret 'face 'font-lock-type-face) parts)))
-      (let (message-log-max
-            (str (apply #'concat (nreverse parts))))
-        (message str)
-        (when (and tern-show-argument-hints-popup (featurep 'popup)
-                   (not (ac-menu-live-p)))
-          (tern-show-argument-hints-popup))))))
+  (let* ((hints tern-last-argument-hints)
+         (parts ())
+         (current-arg (tern-find-current-arg
+                       (tern-argument-hints-paren hints))))
+    (destructuring-bind (name args ret) 
+        (tern-argument-hints-type hints)
+      (push (propertize name 'face 'font-lock-function-name-face) parts)
+      (push "(" parts)
+      (loop for arg in args for i from 0 do
+            (unless (zerop i) (push ", " parts))
+            (let ((name (or (car arg) "?")))
+              (push (if (eq i current-arg) (propertize name 'face 'highlight) name) parts))
+            (unless (equal (cdr arg) "?")
+              (push ": " parts)
+              (push (propertize (cdr arg) 'face 'font-lock-type-face) parts)))
+      (push ")" parts)
+      (when ret
+        (push " -> " parts)
+        (push (propertize ret 'face 'font-lock-type-face) parts)))
+    (let (message-log-max
+          (str (concat (apply #'concat (nreverse parts)) " : " 
+                       (tern-argument-hints-doc hints))))
+      (message str)
+      (when (and tern-show-argument-hints-popup (featurep 'popup)
+                 (not (ac-menu-live-p)))
+        (tern-show-argument-hints-popup)))))
 
 (defun tern-show-argument-hints-popup ()
-  (let ((paren (car tern-last-argument-hints))
-        (type (cdr tern-last-argument-hints)))
+  (let* ((hints tern-last-argument-hints)
+         (paren (tern-argument-hints-paren hints))
+         (type (tern-argument-hints-type hints))
+         (doc (tern-argument-hints-doc hints)))
     (let ((parts ()) (poss ())
           (current-arg (tern-find-current-arg paren)))
       (destructuring-bind (name args ret) type
@@ -359,8 +380,9 @@ list of strings, giving the binary name and arguments.")
           (push ret parts))
         (popup-tip (concat 
                     (apply #'concat (nreverse parts)) "\n"
-                    (apply #'concat (nreverse poss))
-                    )
+                    (apply #'concat (nreverse poss)) "\n"
+                    doc)
+                   :truncate t
                    :point paren)))))
 
 ;; Refactoring ops
@@ -498,7 +520,7 @@ list of strings, giving the binary name and arguments.")
                        (tern-send-buffer-to-server))))
 		 (current-buffer)))
   (setf tern-last-point-pos nil)
-  (when (and tern-last-argument-hints (<= (point) (car tern-last-argument-hints)))
+  (when (and tern-last-argument-hints (<= (point) (tern-argument-hints-paren tern-last-argument-hints)))
     (setf tern-last-argument-hints nil)))
 
 (defun tern-post-command ()
