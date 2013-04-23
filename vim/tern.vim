@@ -66,6 +66,7 @@ def tern_startServer():
     if match:
       port = int(match.group(1))
       vim.command("let b:ternPort = " + str(port))
+      vim.command("let g:ternPID = "+str(proc.pid))
       return (port, False)
     else:
       output += line
@@ -229,6 +230,12 @@ def tern_lookupDocumentation(browse=False):
 
 def tern_lookupType():
   data = tern_runCommand("type")
+  if data: vim.command("echo " + json.dumps(data.get("type", "")))
+
+def tern_lookupArgumentHints(apos):
+  curRow, curCol = vim.current.window.cursor
+  data = tern_runCommand({"type": "type", "preferFunction": True},
+                         {"line": curRow - 1, "ch": apos})
   if data: vim.command("echo " + json.dumps(data.get("type", "not found")))
 
 def tern_lookupDefinition(cmd):
@@ -281,6 +288,21 @@ command! TernDefPreview py tern_lookupDefinition("pedit")
 command! TernDefSplit py tern_lookupDefinition("split")
 command! TernDefTab py tern_lookupDefinition("tabe")
 
+function! tern#LookupType()
+  python tern_lookupType()
+  return ""
+endfunction
+
+function! tern#LookupArgumentHints()
+  let pos = match(getline('.')[:col('.')-2],'[a-zA-Z0-9_]*([^()]*$')
+  if pos >= 0
+    python tern_lookupArgumentHints(int(vim.eval("pos")))
+  else
+    python tern_lookupType()
+  endif
+  return ""
+endfunction
+
 function! tern#Enable()
   let b:ternPort = 0
   let b:ternProjectDir = ''
@@ -289,9 +311,28 @@ function! tern#Enable()
   let b:ternBufferSentAt = -1
   let b:ternInsertActive = 0
   setlocal omnifunc=tern#Complete
+  nnoremap <buffer><expr> t tern#LookupType()
+  nnoremap <buffer> <F3> TernDef
+  augroup TernAutoCmd
+    autocmd!
+    autocmd BufLeave <buffer> :py tern_sendBufferIfDirty()
+    autocmd CursorMoved,CursorMovedI <buffer> call tern#LookupArgumentHints()
+    autocmd InsertEnter <buffer> let b:ternInsertActive = 1
+    autocmd InsertLeave <buffer> let b:ternInsertActive = 0
+  augroup END
+  autocmd VimLeavePre * call tern#Shutdown()
+endfunction
+
+function! tern#Disable()
+  augroup TernAutoCmd
+    autocmd!
+  augroup END
+endfunction
+
+function! tern#Shutdown()
+  if exists('g:ternPID')
+    python os.kill(int(vim.eval("g:ternPID")),3)
+  endif
 endfunction
 
 autocmd FileType javascript :call tern#Enable()
-autocmd BufLeave *.js :py tern_sendBufferIfDirty()
-autocmd InsertEnter *.js :if exists('b:ternInsertActive')|let b:ternInsertActive = 1|endif
-autocmd InsertLeave *.js :if exists('b:ternInsertActive')|let b:ternInsertActive = 0|endif
